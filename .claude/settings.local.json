@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ACER/Downloads/**)",
+      "Bash(grep -iE \"\\\\.pth|\\\\.pt$|pneumonia\")"
+    ]
+  }
+}

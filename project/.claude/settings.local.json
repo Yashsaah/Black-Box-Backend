@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s -m 5 http://localhost:8000/health)",
+      "Bash(./venv/bin/pip install *)",
+      "Bash(./venv/bin/python -m ipykernel install --user --name blackbox-backend --display-name \"Black Box \\(backend venv\\)\")",
+      "Bash(lsof -i :5173 -sTCP:LISTEN -t)"
+    ]
+  }
+}

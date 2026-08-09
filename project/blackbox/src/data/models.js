@@ -47,25 +47,5 @@ export const FALLBACK_CATALOG = {
         },
       ],
     },
-    {
-      name: "Organ localisation",
-      models: [
-        {
-          id: "organ-resnet18",
-          name: "Organ ResNet-18",
-          disease: "Organ localisation",
-          task: "11-class organ identification from abdominal CT slices",
-          architecture: "ResNet-18",
-          dataset: "OrganAMNIST",
-          classes: [
-            "bladder", "femur-left", "femur-right", "heart", "kidney-left",
-            "kidney-right", "liver", "lung-left", "lung-right", "pancreas", "spleen",
-          ],
-          summary: "Identifies which organ a CT slice shows.",
-          weights_file: "model.pth",
-          available: null,
-        },
-      ],
-    },
   ],
 };

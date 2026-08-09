@@ -47,7 +47,6 @@ One model per detection type.
 | --- | --- | --- | --- | --- |
 | `pneumonia-resnet50` | Pneumonia | ResNet-50 | 224px, ImageNet norm | `weights/pneumonia_resnet50.pth` |
 | `glaucoma-cnn` | Glaucoma | custom 2-conv CNN | 128px, 0.5/0.5 norm | `weights/glaucoma_cnn.pth` |
-| `organ-resnet18` | Organ localisation | ResNet-18 | 224px, 0.5/0.5 norm | `model.pth` (backend root) |
 
 See [`weights/README.md`](weights/README.md) for how to export these
 checkpoints out of the notebooks.

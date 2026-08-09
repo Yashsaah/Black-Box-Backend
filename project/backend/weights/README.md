@@ -7,7 +7,6 @@ Drop trained checkpoints here. Filenames must match `weights_file` in
 | --- | --- | --- | --- |
 | `pneumonia_resnet50.pth` | `pneumonia-resnet50` | `Model1.ipynb` final cell | ~94 MB |
 | `glaucoma_cnn.pth` | `glaucoma-cnn` | `Glaucoma.ipynb` final cell | ~67 MB |
-| `model.pth` | `organ-resnet18` | `train_organamnist.py` — already in the backend root, no move needed | ~45 MB |
 
 Aliases are also accepted, so a checkpoint exported under the notebook's own
 name still resolves without renaming: `pneumonia_resnet50_valsplit.pth` and

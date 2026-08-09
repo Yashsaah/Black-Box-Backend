@@ -46,13 +46,6 @@ def resnet50_dropout_head(num_classes: int, dropout: float = 0.4) -> nn.Module:
     return m
 
 
-def resnet18_linear_head(num_classes: int) -> nn.Module:
-    """ResNet-18 with a plain linear head — the original OrganAMNIST classifier."""
-    m = models.resnet18(weights=None)
-    m.fc = nn.Linear(m.fc.in_features, num_classes)
-    return m
-
-
 class GlaucomaCNN(nn.Module):
     """The small custom CNN from the glaucoma notebook (RIM-ONE DL, 128px input).
 
@@ -163,23 +156,6 @@ REGISTRY: List[ModelSpec] = [
         positive_class=0,
         target_layer=lambda m: m.conv2,
         summary="Detects glaucoma in retinal fundus photographs and highlights the optic disc region it keyed on.",
-    ),
-    ModelSpec(
-        id="organ-resnet18",
-        name="Organ ResNet-18",
-        disease="Organ localisation",
-        task="11-class organ identification from abdominal CT slices",
-        architecture="ResNet-18",
-        dataset="OrganAMNIST",
-        weights_file="model.pth",
-        classes=(
-            "bladder", "femur-left", "femur-right", "heart", "kidney-left",
-            "kidney-right", "liver", "lung-left", "lung-right", "pancreas", "spleen",
-        ),
-        builder=resnet18_linear_head,
-        mean=HALF_MEAN,
-        std=HALF_STD,
-        summary="Identifies which organ a CT slice shows.",
     ),
 ]
 

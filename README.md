@@ -74,18 +74,33 @@ No OOM kill at 512 MiB. It used to be well over that; five things got it here:
 `TORCH_NUM_THREADS` (default `1`) caps the thread pool; raise it on a host with
 real cores.
 
-### So does Render's free tier work?
+### Which Render plan?
 
-RAM: yes, now — 460 MiB peak against a 512 MB limit is tight but it survived a
-hard cap. **Latency is the problem instead.** At 0.5 CPU a request takes 2.2–2.9
-s (6.9 s for a 3000x3000 upload). Render free gives 0.1 CPU, so expect 10–15 s
-per request, plus a 40–90 s cold start after the 15-minute idle spin-down — long
-enough to trip health checks and time out a browser upload.
+Render bundles CPU with RAM — there is no 2 CPU / 512 MB option:
+
+| Plan | CPU | RAM | Measured here |
+| --- | --- | --- | --- |
+| Free | 0.1 | 512 MB | RAM fits, but ~11–15 s/request and a 40–90 s cold start after idle spin-down |
+| **Starter** | **0.5** | **512 MB** | **417–460 MiB peak, no OOM. 1.4–6.4 s/request** |
+| Standard | 1 | 2 GB | comfortable |
+| Pro | 2 | 4 GB | ~0.6–1.7 s/request with `TORCH_NUM_THREADS=2` |
+
+Starter is the interesting one: 0.5 CPU / 512 MB is exactly the configuration
+these numbers were measured in. It fits, and paid instances do not spin down.
+
+On anything with more than one core, **set `TORCH_NUM_THREADS` to the core
+count** — it defaults to 1, which is right for a fractional CPU and leaves
+whole cores idle otherwise. Two threads on 2 CPU took a warm request from
+~2.0 s to ~0.63 s.
+
+Render clones from GitHub, where the checkpoints are ordinary git blobs, so the
+Git LFS step below is a Hugging Face requirement only — it does not apply here.
 
 ## Deploying to a Hugging Face Space
 
 The `Dockerfile` and the YAML front-matter above are all a Docker Space needs —
-it builds CPU-only torch and serves on port 7860.
+it builds CPU-only torch and serves on port 7860. It honours `$PORT` when one is
+set, so the same image runs unchanged on Render and Cloud Run.
 
 Two things to get right first:
 

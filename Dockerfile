@@ -29,6 +29,6 @@ RUN pip install --user torch torchvision \
 
 COPY --chown=user project/backend/ ./
 
-# Spaces expects 7860; override with --port anywhere else.
+# Spaces fixes this at 7860; Render and Cloud Run inject their own $PORT.
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]

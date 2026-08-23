@@ -54,5 +54,6 @@ not matter — 25 or 100 epochs produce an identically shaped `state_dict`. Only
 the *architecture* has to match; a mismatch raises at load time rather than
 quietly producing garbage predictions.
 
-Nothing here is committed — add `*.pth` to `.gitignore` if you version this
-folder.
+These checkpoints **are** committed, tracked through Git LFS (see
+`.gitattributes` at the repo root). Hugging Face rejects any non-LFS file over
+10 MB, so anything you add here has to go through LFS too.

@@ -1,0 +1,5 @@
+# Hugging Face rejects any non-LFS file over 10 MB, and the checkpoints are
+# 67 MB and 94 MB. Keep this in sync with whatever lands in weights/.
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.pt  filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text

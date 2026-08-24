@@ -6,16 +6,27 @@ one ModelSpec below and dropping its weights in `weights/`. Nothing else in the
 codebase needs to change: the API, the /models catalogue and the frontend
 picker are all driven from here.
 
-Weights are loaded LAZILY (first request for a given model) and then cached for
-the process lifetime. A ResNet-50 checkpoint is ~95 MB on disk and ~100 MB in
-RAM, so eagerly loading every model at startup would be a waste on a box that
-may only ever be asked for one of them.
+Memory policy (this is the whole reason this file is careful):
+
+  * Weights load LAZILY — nothing touches disk until the first request for a
+    given model id.
+  * At most MAX_LOADED_MODELS (default 1) stay resident. Serving pneumonia and
+    then glaucoma evicts the first instead of holding ~160 MB of both.
+  * Checkpoints are mmap'd and installed with `assign=True`, so the weights are
+    never materialised twice. Peak is ~1x the file, and the pages stay
+    file-backed for the kernel to reclaim under pressure.
+  * Every parameter is frozen. Grad-CAM only needs d(logit)/d(activations); with
+    requires_grad left on, autograd would allocate a full gradient buffer for
+    the entire network on every single request.
 """
 
 from __future__ import annotations
 
+import gc
 import os
+import pickle
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -26,12 +37,32 @@ from torchvision import models
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEIGHTS_DIR = os.path.join(BASE_DIR, "weights")
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# On a fractional-CPU box torch's default thread pool just thrashes; one thread
+# is measurably faster there. Override with TORCH_NUM_THREADS on a real host.
+torch.set_num_threads(int(os.environ.get("TORCH_NUM_THREADS", "1")))
+
+# How many models may sit in RAM at once. 1 = single slot, evict on switch.
+MAX_LOADED_MODELS = max(1, int(os.environ.get("MAX_LOADED_MODELS", "1")))
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 HALF_MEAN = (0.5, 0.5, 0.5)
 HALF_STD = (0.5, 0.5, 0.5)
+
+_device: Optional[torch.device] = None
+
+
+def device() -> torch.device:
+    """Resolved on first use, not at import.
+
+    ZeroGPU (and anything else that attaches an accelerator after the process
+    is already up) reports `cuda.is_available() == False` during startup, so
+    deciding this at import time would pin us to CPU forever.
+    """
+    global _device
+    if _device is None:
+        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return _device
 
 
 # ---------------------------------------------------------------------------
@@ -170,15 +201,25 @@ DEFAULT_MODEL_ID = "pneumonia-resnet50"
 # ---------------------------------------------------------------------------
 
 class LoadedModel:
-    """A ready-to-serve model: weights on device, Grad-CAM hooks attached."""
+    """A ready-to-serve model: weights on device, Grad-CAM target picked out.
 
-    def __init__(self, spec: ModelSpec, module: nn.Module, target_layer: nn.Module):
+    `cam` is filled in lazily by inference.grad_cam_for(). Parking it here
+    rather than in a module-level dict means eviction actually frees memory —
+    a GradCAM holds a reference to the module and a live forward hook on it,
+    so a separate cache would pin every model we ever loaded.
+    """
+
+    __slots__ = ("spec", "module", "target_layer", "cam", "path")
+
+    def __init__(self, spec: ModelSpec, module: nn.Module, target_layer: nn.Module, path: str):
         self.spec = spec
         self.module = module
         self.target_layer = target_layer
+        self.path = path
+        self.cam = None
 
 
-_cache: Dict[str, LoadedModel] = {}
+_cache: "OrderedDict[str, LoadedModel]" = OrderedDict()
 _load_lock = threading.Lock()
 
 
@@ -186,16 +227,42 @@ def is_available(spec: ModelSpec) -> bool:
     return spec.resolve_weights() is not None
 
 
+def _read_state_dict(path: str):
+    """mmap the checkpoint so we never hold two copies of the weights.
+
+    Without mmap, torch.load materialises the full state_dict on the heap and
+    load_state_dict then *copies* it into the module — a ~190 MB peak for a
+    94 MB ResNet. Falls back to a plain load for checkpoints saved in the
+    pre-1.6 pickle format, which cannot be mmap'd.
+    """
+    try:
+        return torch.load(path, map_location="cpu", mmap=True, weights_only=True)
+    except (RuntimeError, TypeError, ValueError, pickle.UnpicklingError):
+        return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def _evict_to(limit: int) -> None:
+    """Drop least-recently-used entries. Caller holds _load_lock."""
+    while len(_cache) > limit:
+        model_id, dead = _cache.popitem(last=False)
+        dead.cam = None
+        dead.module = None
+        print(f"[registry] evicted '{model_id}' to stay under {MAX_LOADED_MODELS} loaded")
+    gc.collect()
+
+
 def load(spec: ModelSpec) -> LoadedModel:
     """Return the cached model, loading it on first use. Thread-safe."""
     cached = _cache.get(spec.id)
     if cached is not None:
+        _cache.move_to_end(spec.id)
         return cached
 
     with _load_lock:
         # Re-check: another thread may have loaded it while we waited.
         cached = _cache.get(spec.id)
         if cached is not None:
+            _cache.move_to_end(spec.id)
             return cached
 
         path = spec.resolve_weights()
@@ -204,19 +271,35 @@ def load(spec: ModelSpec) -> LoadedModel:
                 f"No weights for '{spec.id}'. Expected {spec.weights_file} in {WEIGHTS_DIR}."
             )
 
+        # Make room *before* allocating the new one, so the peak is one model
+        # and not two.
+        _evict_to(MAX_LOADED_MODELS - 1)
+
         module = spec.builder(spec.num_classes)
-        state = torch.load(path, map_location=DEVICE)
+        state = _read_state_dict(path)
         if isinstance(state, dict) and "state_dict" in state:
             state = state["state_dict"]
+
         # strict=True on purpose: a silently mismatched head is worse than a 500.
-        module.load_state_dict(state)
-        module.to(DEVICE).eval()
+        # assign=True installs the mmap'd tensors directly instead of copying.
+        try:
+            module.load_state_dict(state, assign=True)
+        except TypeError:            # torch < 2.1 has no `assign`
+            module.load_state_dict(state)
+
+        module.to(device()).eval()
+
+        # Grad-CAM differentiates w.r.t. activations, never w.r.t. weights.
+        # Leaving these on costs a full gradient buffer (~94 MB for the ResNet)
+        # on every request, for nothing.
+        for p in module.parameters():
+            p.requires_grad_(False)
 
         target_layer = spec.target_layer(module)  # what Grad-CAM hooks
 
-        loaded = LoadedModel(spec, module, target_layer)
+        loaded = LoadedModel(spec, module, target_layer, path)
         _cache[spec.id] = loaded
-        print(f"[registry] loaded '{spec.id}' from {path} on {DEVICE}")
+        print(f"[registry] loaded '{spec.id}' from {path} on {device()}")
         return loaded
 
 

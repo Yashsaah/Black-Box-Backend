@@ -1,0 +1,20 @@
+.git
+.gitattributes
+.claude
+__pycache__
+**/__pycache__
+*.pyc
+.DS_Store
+**/.DS_Store
+__MACOSX
+
+# Frontend — deployed on Vercel, not in this image.
+project/blackbox
+project/*.jsx
+project/*.css
+project/*.js
+
+# Unregistered OrganAMNIST checkpoint; nothing loads it.
+project/backend/model.pth
+project/backend/venv
+project/backend/train_organamnist.py

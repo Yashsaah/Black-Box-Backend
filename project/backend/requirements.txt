@@ -1,8 +1,18 @@
-fastapi
-uvicorn[standard]
-python-multipart
-torch
-torchvision
-opencv-python-headless
-pillow
-numpy
+# Torch is the only heavy dependency here. On Linux, plain `pip install torch`
+# pulls the CUDA build and several GB of nvidia-* wheels; for a CPU deployment
+# install it from the CPU index first:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+#
+# The Dockerfile already does exactly that.
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+torch>=2.2
+torchvision>=0.17
+
+pillow>=10.0
+numpy>=1.26
